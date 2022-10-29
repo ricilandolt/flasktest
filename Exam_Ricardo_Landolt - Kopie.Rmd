@@ -1,0 +1,469 @@
+---
+title: "Exam"
+author: "Ricardo Landolt"
+date: '2022-06-10'
+output: 
+  html_document: 
+    toc: true
+    toc_depth: 6
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, warning=FALSE,message=FALSE}
+library(naniar)
+library(plyr)
+library(psych)
+library(dplyr)
+library(plm)
+library(stargazer)
+library(cobalt)
+library(MatchIt)
+library(ggplot2)
+library(panelAR)
+library(nlme)
+library(dotwhisker)
+library(OrthoPanels)
+library(modelsummary)
+
+options(scipen = 5) # bias against scientific notation
+options(digits = 4) # show fewer decimal places
+
+df <- read.csv("https://raw.githubusercontent.com/PrisonRodeo/GSERM-Panel-2022/main/Exam/GSERM-Panel-2022-Exam-Data.csv")
+df$YearNumeric<-df$Year
+df$lntt <- log(df$TotalTrade)
+pddf <-pdata.frame(df,index=c("CountryCode","Year"))
+pddf$PartyExclusion <- ifelse(pddf$PartyExclusion > 0, 1, 0)
+```
+
+### Overiew
+
+The structure of the data shows that the right datatypes have been used.
+
+```{r}
+
+str(df)
+```
+Summary statistic looks normal, no obvious outliers.
+
+```{r}
+
+summary(df)
+```
+
+The hist plot shows that it is not a balanced dataset.
+
+```{r}
+
+dfyear<-ddply(df,.(CountryCode),summarise,
+             Terms=n())
+
+hist(dfyear$Terms,col="grey80",freq=TRUE,
+     main="",xlab="Terms Served")
+abline(v=mean(dfyear$Terms),lwd=2,lty=2)
+```
+
+
+There are a lot of missing values, which probalby will influence the results. However, these are not considered further for this exam.
+
+```{r, warning=FALSE}
+vis_miss(df)
+```
+
+
+
+## Do regimes which exclude opposition parties last longer?
+
+\
+If a regime exclude opposition parties in the bivariate and in the ols model the RegimeDurability variable decreases. The opposite is the case with the Fixed Effect models, which can make sense, because if other parties are excluded, they have no chance of coming to power. It can also be determined by observing the coefficients that in the ols and in the one-way fixed effect model the variables PercentLiterate and the GDP have a positive, whereas the CoupAttempts has a negative effect on the dependent variable. In comparison, the two-way fixed effect model and the model which includes a lagged dependent variable differ by the variable percent literate, which has a negative or near zero coefficient. A possible explanation could be that a country with more educated people, is probably more modern and liberal. One can assume that a more liberal country allows much more variety of parties and is more open to an alternative political direction. e.g. one can think of the usa, germany and france, where from time to time a shift from left to right took place. In a non-democratic country, other parties are more likely to be undermined, resulting in fewer changes. 
+
+#### OLS, Fixed Effect Models, Lagged Dependent Variable
+
+```{r, results='asis'}
+
+BIV<-lm(RegimeDurability~PartyExclusion,data=pddf)
+
+# OLS:
+OLS<-lm(RegimeDurability~PartyExclusion +PercentLiterate +CoupAttempts  +
+GDP ,data=pddf)
+
+# Fixed Effects... One-way:
+FE.1way<-plm(RegimeDurability~PartyExclusion + +PercentLiterate +CoupAttempts +
+GDP,data=pddf,effect="individual",model="within")
+
+# Two-way:
+FE.2way<-plm(RegimeDurability~PartyExclusion +PercentLiterate +CoupAttempts  +
+GDP,data=pddf,effect="twoway",model="within")
+
+FE.LDV<-plm(RegimeDurability~PartyExclusion + PercentLiterate +CoupAttempts+GDP+  lag(RegimeDurability),data=pddf,effect="individual",model="within")
+
+
+stargazer(BIV,OLS,FE.1way,FE.2way,FE.LDV, type = "html")
+
+
+```
+
+\
+
+#### Covariate Balance
+
+\
+
+##### Covariate Balance before matching
+The variables CoupAttempts, PercentLiterate and GDP were divided into 10 deciles and a covariance plot is shown below. The points are not on the vertical line for almost any of the variable indicators. So it can be said,  the regimes that exclude other parties are very different from the regimes that do not exclude other parties. 
+
+```{r, message=FALSE}
+
+vars<-c("CountryCode","Year","RegimeDurability","PartyExclusion","PercentLiterate","GDP","TotalTrade","CoupAttempts","YearNumeric","UnivEnrollmentPerK",  "lntt")
+pddf<-pddf[vars]
+pddf<-na.omit(pddf)
+# Create discrete-valued variables (i.e., coarsen) for
+# matching on continuous predictors:
+
+pddf$CoupAttempts.Decile<-as.factor(ntile(pddf$CoupAttempts,10))
+pddf$PercentLiterate.Decile<-as.factor(ntile(pddf$PercentLiterate,10))
+pddf$GDP.Decile <-as.factor(ntile(pddf$GDP,10))
+
+# Pre-match balance statistics...
+BeforeBal<-bal.tab(PartyExclusion ~
+                PercentLiterate.Decile + CoupAttempts.Decile  +GDP.Decile ,data=pddf,
+                stats=c("mean.diffs","ks.statistics"))
+
+# Plot balance:
+plot(BeforeBal)
+
+# Exact Matching:
+M.exact <- matchit(PartyExclusion~
+                PercentLiterate.Decile+CoupAttempts.Decile + GDP.Decile ,data=pddf,method="exact")
+
+# Plot balance...
+ExactBal<-bal.tab(M.exact,un=TRUE)
+pddf.exact <- match.data(M.exact,group="all")
+```
+\
+
+
+##### Covariate Balance after matching
+In order to compare regimes which exclude other parties with the ones that don't exclude them, an exact matching approach has been used. As an aside, one would like to mention at this point that matching with propensity score and optimal was also attempted, but the results were not satisfactory. In order not to lengthen the report, they are not listed. This procedure changes the number of rows from `r nrow(pddf)` to `r dim(pddf.exact)[1]`.
+
+```{r}
+plot(ExactBal)
+
+```
+\
+
+#### Model comparsion Matching
+
+Comparing the regressions before and after matching, confirms the statements above, the coefficients change slightly due to the consideration of matching.
+
+```{r, results='asis'}
+
+
+# Regressions (before and) after matching... ####
+
+PreMatch.FE<-plm(RegimeDurability~PartyExclusion + PercentLiterate +CoupAttempts +
+GDP ,data=pddf, effect="individual",model="within")
+
+PreMatch.FE.LDV<-plm(RegimeDurability~PartyExclusion + PercentLiterate +CoupAttempts  + GDP +  lag(RegimeDurability),data=pddf,
+            effect="individual",model="within")
+
+FE.Exact <-plm(RegimeDurability~PartyExclusion + PercentLiterate +CoupAttempts  + GDP,data=pddf.exact,effect="individual",model="within")
+
+FE.LDV.Exact <-plm(RegimeDurability~PartyExclusion + PercentLiterate + CoupAttempts  + GDP + lag(RegimeDurability),data=pddf.exact,
+              effect="individual",model="within")
+
+
+stargazer(PreMatch.FE,PreMatch.FE.LDV,FE.Exact,FE.LDV.Exact, type = "html")
+
+```
+
+
+#### Differences in Differences
+
+There are some countries that change their behaviour in including or excluding other parties over time, because of that it could make sense to try a differences in differences approach. Looking at the graph below, the color of the lines represent the countries. If the line is shaped with triangles, the regime excludes other parties whereas if the line is shaped with circles it doesn't exclude other parties.  
+
+```{r}
+ggplot(pddf , aes(x = Year , y = RegimeDurability, colour =CountryCode, shape = factor(PartyExclusion) )) + 
+  geom_point() +
+  theme(legend.position="none", axis.text.x = element_text(angle = 90))  
+
+
+```
+
+The summary below shows that all models with fixed effect have a positive partyexclusion and a negative percentliterate coefficient, which cover the statements from above. 
+
+
+```{r}
+
+pddf.exact$Time<-pddf.exact$YearNumeric-1950
+
+OLS1<-lm(RegimeDurability~PartyExclusion  + Time +PartyExclusion*Time,data=pddf.exact)
+
+OLS2<-lm(RegimeDurability~PartyExclusion + PercentLiterate + CoupAttempts  + GDP + Time +PartyExclusion*Time,
+             data=pddf.exact)
+
+oneway.1<-plm(RegimeDurability~PartyExclusion  + Time +PartyExclusion*Time,data=pddf.exact,
+              effect="individual",model="within")
+
+oneway.2 <-plm(RegimeDurability~PartyExclusion + PercentLiterate + CoupAttempts  + GDP + Time +PartyExclusion*Time,
+               data=pddf.exact,effect="individual",model="within")
+
+twoway.1 <-plm(RegimeDurability~PartyExclusion  + Time +PartyExclusion*Time,data=pddf.exact,
+                effect="twoway",model="within")
+
+twoway.2 <-plm(RegimeDurability~PartyExclusion + PercentLiterate + CoupAttempts  + GDP + Time +PartyExclusion*Time,
+                data=pddf.exact,effect="twoway",model="within")
+
+
+modelsummary(list(OLS1,OLS2,oneway.1,oneway.2,
+                      twoway.1,twoway.2))
+```
+
+For the following models, the dataset was limited to the regimes that once excluded a party in a year. It was only intended to check whether the results would change and are therefore only provided for illustration purposes.
+
+```{r}
+
+pedf <-pddf %>% 
+  group_by(CountryCode) %>%
+  filter(any(PartyExclusion==1))
+
+pedf <-pdata.frame(pedf,index=c("CountryCode","Year"))
+
+pedf$Time<-pedf$YearNumeric-1950
+
+OLS1 <-lm(RegimeDurability~PartyExclusion  + Time +PartyExclusion*Time,data=pddf.exact)
+
+OLS2 <-lm(RegimeDurability~PartyExclusion + PercentLiterate + CoupAttempts  + GDP + Time +PartyExclusion*Time,
+             data=pedf)
+
+oneway.1 <-plm(RegimeDurability~PartyExclusion  + Time +PartyExclusion*Time,data=pedf,
+              effect="individual",model="within")
+
+oneway.2<-plm(RegimeDurability~PartyExclusion + PercentLiterate + CoupAttempts  + GDP + Time +PartyExclusion*Time,
+               data=pddf.exact,effect="individual",model="within")
+
+twoway.1 <-plm(RegimeDurability~PartyExclusion  + Time +PartyExclusion*Time,data=pedf,
+                effect="twoway",model="within")
+
+twoway.2 <-plm(RegimeDurability~PartyExclusion + PercentLiterate + CoupAttempts  + GDP + Time +PartyExclusion*Time,
+                data=pedf,effect="twoway",model="within")
+
+modelsummary(list(OLS1,OLS2,oneway.1,oneway.2,
+                      twoway.1,twoway.2))
+
+```
+
+Next, a manual approach is used and so the maximum regime durability per regime and party exclusion was calculated. The longest durability with exclusion and non-exclusion has been calculated. The density plot shows the situation that regimes which excluded parties tend to govern longer.
+
+```{r, message=FALSE, warning=FALSE}
+grouped <- pedf %>% 
+  group_by(CountryCode, PartyExclusion) %>% 
+  summarise(RegimeDurability  = max(RegimeDurability, na.rm = TRUE) )
+
+ggplot(grouped, aes(x = RegimeDurability, fill = factor(PartyExclusion))) + 
+  geom_density(alpha = 0.5) + # density plot with transparency (alpha = 0.5)
+  scale_fill_manual(name = " ", # changes to fill dimension
+                     values = c("#a7a8aa", "#cc0055"),
+                     labels = c("NoPartiesExclusion", "PartiesExclusion")) +
+  theme_minimal()
+```
+
+If we model this data we see that the coefficient is positive like many times before, so we can say that regime which exclude other parties do last longer.
+
+```{r}
+
+fe <- plm(RegimeDurability ~ PartyExclusion , data = grouped, model = "pooling")
+modelsummary(fe)
+
+```
+
+\
+\
+\   
+
+### Conclusion
+
+As you could see from the previous statements, the results indicate that Regimes which exclude other parties last longer.
+
+
+## What, if anything, is the association between a country’s degree of education (measured in terms of literacy and university enrollment) and the extent of its involvement in the international economy (defined as total trade)?
+
+\
+
+As a first attempt we model an OLS model, a one-way fixed effect and a two-way fixed effect model.
+
+```{r, results='asis'}
+pddf <-pdata.frame(df,index=c("CountryCode","Year"))
+# OLS:
+OLS <- plm(lntt~PercentLiterate+UnivEnrollmentPerK,data=pddf, model = "pooling")
+
+# Fixed Effects... One-way:
+FE.1way<-plm(lntt~PercentLiterate+UnivEnrollmentPerK,data=pddf,
+            effect="individual",model="within")
+
+# Two-way:
+FE.2way<-plm(lntt~PercentLiterate+UnivEnrollmentPerK,data=pddf,
+         effect="twoway",model="within")
+
+# A nice table:
+stargazer(OLS,FE.1way,FE.2way, type = "html")
+```
+\
+
+There is an upward trend in total trade  beginning in 1995 over the years for the different countries.
+\
+```{r}
+
+ggplot(pddf , aes(x = as.Date(paste0(YearNumeric, "-01-01")), y = TotalTrade, colour = CountryCode )) +
+  geom_line() + 
+  labs(x = "year") +
+  theme(legend.position="none")
+
+```
+
+Both predictors are highly autocorrelated, which should not be ignored in the model specification. 
+
+```{r}
+PL <- pdwtest(PercentLiterate~1,data=pddf)
+UE <- pdwtest(UnivEnrollmentPerK~1,data=pddf)
+
+rhos<-data.frame(Variable=c("PercentLiterate","UnivEnrollmentPerK"),
+                 Rho = c(1-(PL$statistic/2),1-(UE$statistic/2)))
+
+rhos
+```
+
+Durbin Watson Test implies also a high autocorrelation.
+
+```{r, warning=FALSE, message=FALSE}
+
+pdwtest(OLS)
+PraisWinsten <- panelAR(lntt~PercentLiterate+UnivEnrollmentPerK,data=pddf,panelVar="CountryCode",timeVar="YearNumeric",
+              autoCorr="ar1",panelCorrMethod="none",
+              rho.na.rm=TRUE)
+
+```
+
+PraisWinsten increases the $r^{2}$ to `r summary(PraisWinsten)$r2`. Normally, the coefficients in the Prais Winsten model should get smaller. In this case UnivEnrollmentPerK is getting smaller, but the PercentLiterate even gets a little bit bigger. 
+
+
+```{r}
+summary(PraisWinsten)
+```
+
+
+
+The PCSE model results with the same coefficients and $r^{2}$ but the standard errors look different. 
+
+```{r, warning=FALSE, message=FALSE}
+PCSE<-panelAR(lntt~PercentLiterate+UnivEnrollmentPerK,data=pddf,panelVar="CountryCode",timeVar="YearNumeric",
+           autoCorr="ar1",panelCorrMethod="pcse",
+           rho.na.rm=TRUE)
+
+summary(PCSE)
+
+PraisWinstenPSAR1 <-panelAR(lntt~PercentLiterate+UnivEnrollmentPerK,data=pddf,panelVar="CountryCode",timeVar="YearNumeric",
+           autoCorr="psar1",panelCorrMethod="none",
+           rho.na.rm=TRUE)
+```
+
+
+
+When the model includes autocorrelation with a unique correlation coefficient for each panel the $r^{2}$ increases to `r summary(PraisWinstenPSAR1)$r2`.
+
+```{r, warning=FALSE, message=FALSE}
+summary(PraisWinstenPSAR1)
+```
+
+
+
+Usually it is expected that the coefficents would get smaller compared to an ols model. This is true for the UnivEnrollmentPerK Variable but not for the PercentLiterate. 
+
+```{r}
+hats <- data.frame(term=rep(c("(Intercept)","PercentLiterate",
+                 "UnivEnrollmentPerK"),4),
+                 model=c(rep("OLS",3),rep("P-W",3),               rep("PCSE",3),rep("PraisWinstenPSAR1",3)),
+                 estimate=c(coef(OLS),coef(PraisWinsten),
+                               coef(PCSE), coef(PraisWinstenPSAR1)),
+                 std.error=c(sqrt(diag(vcov(OLS))),
+                                 sqrt(diag(vcov(PraisWinsten))),
+                                
+                                 sqrt(diag(vcov(PCSE))),
+                                 sqrt(diag(vcov(PraisWinstenPSAR1))))
+)
+
+
+dwplot(hats,
+       vline=geom_vline(xintercept=0,linetype=2),
+       dot_args = list(aes(shape = model))) +
+       theme_classic() +
+       xlab("Coefficient Estimate") +
+       guides(shape = guide_legend("Model"),
+              colour = guide_legend("Model"))
+
+```
+
+
+
+#### Dynamic Models
+
+```{r}
+LDVfit <- lm(lntt~PercentLiterate+UnivEnrollmentPerK+lag(TotalTrade),data=pddf)
+
+FDfit <- plm(lntt~PercentLiterate+UnivEnrollmentPerK,
+              data=pddf,effect="individual",model="fd")
+
+LDVFEfit <- plm(lntt~PercentLiterate+UnivEnrollmentPerK+lag(TotalTrade),data=pddf,effect="individual",model="within")
+
+modelsummary(list(LDVfit,FDfit,FE.1way,LDVFEfit))
+
+```
+
+#### Trends
+
+The coefficient for the trend is not so big and on the other hand PercentLiterate is getting negative. $r^{2}$ is also not increasing very much. 
+
+```{r}
+
+pddf$Trend <- ifelse(pddf$YearNumeric-1995>0, 0, pddf$YearNumeric-1995)
+
+# FE with trend:
+
+FE.trend <- plm(lntt ~ PercentLiterate + UnivEnrollmentPerK + Trend,
+              data=pddf,effect="individual",
+              model="within")
+
+summary(FE.trend)
+
+```
+
+#### Orthogonalization
+
+With the Orthogonalization approach it is visible that the coefficients are very small and very precise. 
+
+```{r, cache=TRUE}
+
+set.seed(7222009)
+OPM.fit <- opm(lntt ~ PercentLiterate + UnivEnrollmentPerK,
+               data=pddf,index=c("CountryCode","Year"),n.samp=1000)
+
+# Ladder plot of estimates & CIs:
+caterplot(OPM.fit,parm=c("beta","rho"),
+          main=c(""),xlab="Parameter Estimate",
+          labels=c("PercentLiterate",
+                   "UnivEnrollmentPerK","Rho"))
+abline(v=c(0),lty=2)
+```
+
+### Conclusion 
+According to the models we can say that percentliterate and univenrollmentperk have a little effect on the totaltrade and there are probably more important predictors that are missing in these models. 
+<br>
+
+
+
+
+
+
+

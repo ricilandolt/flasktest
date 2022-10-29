@@ -1,0 +1,367 @@
+---
+title: "Exercise"
+author: "Ricardo Landolt"
+date: '2022-06-08'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(naniar)
+library(plyr)
+library(psych)
+library(dplyr)
+library(panelView)
+library(plm)
+library(lme4)
+```
+
+
+```{r, echo=FALSE}
+#### read data ####
+
+df <- read.csv("https://raw.githubusercontent.com/PrisonRodeo/GSERM-Panel-2022/main/Exercises/GSERM-APD-Exercise-June-2022.csv")
+
+```
+
+### Overiew
+
+the structure of data seems that the right datatypes have been used 
+
+```{r}
+
+str(df)
+```
+summary statistic looks normal, no obvious outliers
+
+```{r}
+
+summary(df)
+```
+
+
+
+the hist plot shows that it is a balanced dataset
+
+```{r}
+
+dfyear<-ddply(df,.(StateID),summarise,
+             Terms=n())
+
+hist(dfyear$Terms,col="grey80",freq=TRUE,
+     main="",xlab="Terms Served")
+abline(v=mean(dfyear$Terms),lwd=2,lty=2)
+```
+
+
+there are no missing values
+
+```{r}
+vis_miss(df)
+```
+
+
+
+### Between and within Variation 
+
+#### MurderPer100K
+
+the between variation is quite as high as the total variation. But there is also some within variation. 
+
+```{r}
+pddf <- pdata.frame(df, index = c("StateID", "Year"))
+murder <- pddf$MurderPer100K
+
+describe(murder,na.rm=TRUE)
+plot(density(pddf$MurderPer100K,na.rm=TRUE),
+     main="",xlab="MurderPer100K",lwd=2)
+abline(v=mean(pddf$MurderPer100K,na.rm=TRUE),
+       lwd=1,lty=2)
+
+
+
+```
+
+
+```{r}
+
+describe(plm::between(murder,effect="individual",na.rm=TRUE)) # "between" variation
+
+murderMeans<-plm::between(murder,effect="individual",na.rm=TRUE)
+
+
+plot(density(murderMeans,na.rm=TRUE),
+     main="",xlab="Mean MurderPer100K",lwd=2)
+abline(v=mean(murderMeans,na.rm=TRUE),
+       lwd=1,lty=2)
+```
+
+```{r}
+describe(Within(murder,na.rm=TRUE)) # "within" variation
+plot(density(Within(murder,na.rm=TRUE),na.rm=TRUE),
+     main="",xlab="MurderPer100K: Within-State Variation",
+     lwd=2)
+abline(v=0,lty=2)
+```
+
+
+#### UrbanPct
+variation between states is nearly like the total variation
+within varation is quite small and so over the time consistently
+```{r}
+
+with(df, describe(UrbanPct))
+
+
+LibMeans <- ddply(df,.(StateID),summarise,
+                MeanLibPct=mean(UrbanPct))
+with(LibMeans, describe(MeanLibPct))
+
+
+
+dfw <- ddply(df,.(StateID), mutate,
+             LibMean=mean(UrbanPct))
+dfw$LibWithin <- with(dfw, UrbanPct-LibMean)
+with(dfw, describe(LibWithin))
+```
+
+#### AvgEducation
+variation between states is nearly like the total variation 
+within varation is quite small and so over the time consistently
+
+```{r}
+with(df, describe(AvgEducation))
+
+
+LibMeans <- ddply(df,.(StateID),summarise,
+                MeanLibPct=mean(AvgEducation))
+with(LibMeans, describe(MeanLibPct))
+
+
+
+dfw <- ddply(df,.(StateID), mutate,
+             LibMean=mean(AvgEducation))
+dfw$LibWithin <- with(dfw, AvgEducation-LibMean)
+with(dfw, describe(LibWithin))
+```
+
+#### SchoolSpendEq
+
+variation between states is high like the total variation 
+within varation is zero 
+
+
+```{r}
+with(df, describe(SchoolSpendEq))
+
+
+LibMeans <- ddply(df,.(StateID),summarise,
+                MeanLibPct=mean(SchoolSpendEq))
+with(LibMeans, describe(MeanLibPct))
+
+
+
+dfw <- ddply(df,.(StateID), mutate,
+             LibMean=mean(SchoolSpendEq))
+dfw$LibWithin <- with(dfw, SchoolSpendEq-LibMean)
+with(dfw, describe(LibWithin))
+```
+
+#### AvgIdeol
+
+variation between states is nearly like the total variation
+within varation is quite small and so over the time consistently
+```{r}
+with(df, describe(AvgIdeol))
+
+
+LibMeans <- ddply(df,.(StateID),summarise,
+                MeanLibPct=mean(AvgIdeol))
+with(LibMeans, describe(MeanLibPct))
+
+
+
+dfw <- ddply(df,.(StateID), mutate,
+             LibMean=mean(AvgIdeol))
+dfw$LibWithin <- with(dfw, AvgIdeol-LibMean)
+with(dfw, describe(LibWithin))
+```
+
+#### CitizenIdeol
+variation between states is nearly like the total variation
+within varation is quite small and so over the time consistently
+```{r}
+with(df, describe(CitizenIdeol))
+
+
+LibMeans <- ddply(df,.(StateID),summarise,
+                MeanLibPct=mean(CitizenIdeol))
+with(LibMeans, describe(MeanLibPct))
+
+
+
+dfw <- ddply(df,.(StateID), mutate,
+             LibMean=mean(CitizenIdeol))
+dfw$LibWithin <- with(dfw, CitizenIdeol-LibMean)
+with(dfw, describe(LibWithin))
+```
+
+#### EliteIdeol
+
+variation between states is nearly like the total variation
+within varation is quite small and so over the time consistently
+```{r}
+with(df, describe(EliteIdeol))
+
+
+LibMeans <- ddply(df,.(StateID),summarise,
+                MeanLibPct=mean(EliteIdeol))
+with(LibMeans, describe(MeanLibPct))
+
+
+
+dfw <- ddply(df,.(StateID), mutate,
+             LibMean=mean(EliteIdeol))
+dfw$LibWithin <- with(dfw, EliteIdeol-LibMean)
+with(dfw, describe(LibWithin))
+
+```
+
+### Panel Data Visualiszation
+most of the states are on the same level during over the years. A few states have a upward trend.
+
+```{r}
+
+panelview(MurderPer100K~1,data=df,theme.bw=TRUE,
+          outcome.type="continuous",type="outcome",
+          by.timing=TRUE,index=c("StateID","Year"),
+          main=" ",ylab="MurderPer100K",
+          legendOff=TRUE)
+```
+
+overtime no state changed their deathpenalty and their are more states with deathpenalty
+
+```{r}
+panelview(MurderPer100K~DeathPenalty,data=df,theme.bw=TRUE,
+          by.timing=FALSE,index=c("StateID","Year"),
+          color=c("orange","darkgreen"),
+          legend.labs=c("No DeathPenalty","DeathPenalty"),
+          main=" ",ylab="State Code",axis.lab.gap=c(5,5),
+          background="white")
+
+
+```
+
+
+### Modeling
+
+Expectation is that the MurderPer100K Variabel increases if the Population, UrbanPct increase or AvgEducation, AvgIdeol decrease.
+
+#### Pooled OLS
+
+The expectations are met in the ols model
+```{r}
+
+OLS<-plm(MurderPer100K~DeathPenalty+log(Population)+UrbanPct+AvgEducation+AvgIdeol ,
+        data=pddf, model="pooling")
+
+summary(OLS)
+
+
+```
+#### Fixed Effect within unit
+
+DeathPenalty and SchoolSpendEq (SchoolSpendEq removed in the model) are for all the years the same within a unit/state and drops away. 
+The expectations are not met in the Fixed Effect model, for example AvgEducation has totally different effect as expected.Further, $r^{2}$ is very low.
+
+```{r}
+FE<-plm(MurderPer100K~DeathPenalty+log(Population)+UrbanPct+AvgEducation+AvgIdeol ,
+        data=pddf, effect="individual",model="within")
+summary(FE)
+```
+#### Fixed Effect within time
+The expectations are met in this Fixed Effect model within the different time points and also the $r^{2}$ imporved and is over the ols model. 
+```{r}
+FE.Time<-plm(MurderPer100K~DeathPenalty+log(Population)+UrbanPct+AvgEducation+AvgIdeol ,
+        data=pddf,effect="time",model="within")
+summary(FE.Time)
+
+```
+
+#### Between Model
+The same is true is for the between model. 
+
+```{r}
+BE<-plm(MurderPer100K~DeathPenalty+log(Population)+UrbanPct+AvgEducation+AvgIdeol ,
+        data=pddf,effect="individual",model="between")
+
+summary(BE)
+
+```
+#### Random Model
+The random effect model tends to the fixed effect model, the coefficients look not as expected.
+```{r}
+RE<-plm(MurderPer100K~DeathPenalty+log(Population)+UrbanPct+AvgEducation+AvgIdeol ,
+        data=pddf,
+        effect="individual",model="random")
+
+summary(RE)
+```
+
+#### Twoway Model within
+The twoway unit effect model within or random looks also not promising
+```{r}
+
+TwoWayFE<-plm(MurderPer100K~log(Population)+UrbanPct+AvgEducation+AvgIdeol + DeathPenalty ,
+              data=pddf,effect="twoway",model="within")
+
+summary(TwoWayFE)
+```
+
+
+#### Twoway Model Random
+```{r}
+TwoWayRE<-plm(MurderPer100K~log(Population)+UrbanPct+AvgEducation+AvgIdeol + DeathPenalty , data=pddf,
+              effect="twoway",model="random")
+
+summary(TwoWayRE)
+```
+
+### Testing
+
+The F-Tests imply that there are time as unit effects, as expected like before in the decomposition of the variation. The Hausman test imply tha one model is inconsistent, which is propably due to the non-time-varying covariate effects.
+```{r}
+pFtest(FE.Time, OLS)
+pFtest(FE, OLS)
+phtest(FE, RE)
+```
+
+
+### Conclusion 
+
+The variable DeathPenalty is time invariant. That means that within a unit or across all points in time the death penalty is always the same. The variable differs only from state to state or more precise between units and that is why the variable DeathPenalty and also the SchoolSpendEq (little changes over time) are omitted if you fit a fixed effect model within units. So you only get a coefficient for death penalty if you fit a fixed effect model within time points or a between model. Further, the coefficients of the fixed effect model within time also look more like what one would expect, for example that with higher education the murdersper100k decrease. Further the $r^{2}$ is `r summary(FE.Time)$r.squared[1]` compared to a fixed effects model within units with a $r^{2}$ of `r summary(FE)$r.squared[1]`. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
